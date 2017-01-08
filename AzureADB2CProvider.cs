@@ -1,9 +1,10 @@
-﻿using System;
+﻿using BlackBarLabs.Security.CredentialProvider;
+using System;
 using System.Threading.Tasks;
 
 namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
 {
-    public class AzureADB2CProvider : IProvideCredentials
+    public class AzureADB2CProvider
     {
         public async Task<TResult> RedeemTokenAsync<TResult>(Uri providerId, string username, string token, 
             Func<string, TResult> success, Func<string, TResult> invalidCredentials,
