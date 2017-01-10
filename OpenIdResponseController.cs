@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Net.Http;
+using System.Threading.Tasks;
 using System.Web;
 using System.Web.Http;
 
@@ -16,31 +17,13 @@ namespace BlackBarLabs.Security.SessionServer.Api.Controllers
         public string state { get; set; }
     }
 
-    [RoutePrefix("auth")]
+    [RoutePrefix("aadb2c")]
     public class OpenIdResponseController : ApiController
     {
-        public IHttpActionResult Get()
-        {
-            var longurl = CredentialProvider.AzureADB2C.App.AuthEndpoint; // "https://login.microsoftonline.com/humatestlogin.onmicrosoft.com/oauth2/v2.0/authorize";
-            var uriBuilder = new UriBuilder(longurl);
-            var query = HttpUtility.ParseQueryString(uriBuilder.Query);
-            query["client_id"] = CredentialProvider.AzureADB2C.App.Audience; // "51d61cbc-d8bd-4928-8abb-6e1bb3155526";
-            query["response_type"] = "id_token";
-            query["redirect_uri"] = "http://localhost:6144/auth/OpenIdResponse/";
-            query["response_mode"] = "form_post";
-            query["scope"] = "openid";
-            query["state"] = Guid.NewGuid().ToString("N");
-            query["nonce"] = "12345";
-            query["p"] = "B2C_1_signin1";
-            uriBuilder.Query = query.ToString();
-            var redirect = uriBuilder.ToString();
-            return this.Request.CreateResponse(System.Net.HttpStatusCode.OK, redirect).ToActionResult();
-        }
-
-        public IHttpActionResult Post(OpenIdConnectResult result)
+        public async Task<IHttpActionResult> Post(OpenIdConnectResult result)
         {
             var id_token = result.id_token;
-            return CredentialProvider.AzureADB2C.App.ValidateToken(id_token,
+            return (await CredentialProvider.AzureADB2C.App.ValidateToken(id_token,
                 (token, claims) =>
                 {
                     return this.Request.CreateResponse(System.Net.HttpStatusCode.Created,
@@ -53,7 +36,7 @@ namespace BlackBarLabs.Security.SessionServer.Api.Controllers
                 (why) =>
                 {
                     return this.Request.CreateResponse(System.Net.HttpStatusCode.Conflict, why);
-                }).ToActionResult();
+                })).ToActionResult();
         }
     }
 }

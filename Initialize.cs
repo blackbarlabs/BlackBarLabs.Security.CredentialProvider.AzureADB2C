@@ -1,15 +1,16 @@
 ﻿using System;
 using System.Linq;
 using System.Net;
+using System.Web.Http;
 using System.Threading.Tasks;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
 
 using Microsoft.IdentityModel.Tokens;
 
-using BlackBarLabs.Web;
 using BlackBarLabs.Extensions;
-using System.Web.Http;
+using BlackBarLabs.Web;
+using BlackBarLabs.Api;
 
 namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
 {
@@ -18,29 +19,26 @@ namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
         private static TokenValidationParameters validationParameters;
         internal static string Audience;
         internal static string AuthEndpoint;
+        private static Uri ConfigurationEndpoint;
 
-        public static Task<TResult> AzureADB2CStartAsync<TResult>(this HttpConfiguration config, string audience, Uri configurationEndpoint,
-            Func<TResult> onSuccess,
-            Func<string, TResult> onFailed)
-        {
-            config.Routes.MapHttpRoute(
-                name: "auth",
-                routeTemplate: "auth/{controller}/{id}",
-                defaults: new { id = RouteParameter.Optional });
-
-            var assemblyRecognition = new InjectableAssemblyResolver(typeof(SessionServer.Api.Controllers.OpenIdResponseController).Assembly,
-                config.Services.GetAssembliesResolver());
-
-            config.Services.Replace(typeof(System.Web.Http.Dispatcher.IAssembliesResolver), assemblyRecognition);
-
-            return InitializeAsync(audience, configurationEndpoint, onSuccess, onFailed);
-        }
-
-        public static async Task<TResult> InitializeAsync<TResult>(string audience, Uri configurationEndpoint,
+        public static TResult AzureADB2CStartAsync<TResult>(this HttpConfiguration config, string audience, Uri configurationEndpoint,
             Func<TResult> onSuccess,
             Func<string, TResult> onFailed)
         {
             App.Audience = audience;
+            App.ConfigurationEndpoint = configurationEndpoint;
+            //config.AddExternalControllers<SessionServer.Api.Controllers.OpenIdResponseController>();
+            AddExternalControllersX<SessionServer.Api.Controllers.OpenIdResponseController>(config);
+            //return InitializeAsync(audience, configurationEndpoint, onSuccess, onFailed);
+            return onSuccess();
+        }
+
+        public static async Task<TResult> InitializeAsync<TResult>(
+            Func<TResult> onSuccess,
+            Func<string, TResult> onFailed)
+        {
+            var audience = App.Audience;
+            var configurationEndpoint = App.ConfigurationEndpoint;
             var request = WebRequest.CreateHttp(configurationEndpoint);
             return await await request.GetResponseJsonAsync(
                 (ConfigurationResource config) =>
@@ -84,14 +82,38 @@ namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
             return result;
         }
 
-        public static TResult ValidateToken<TResult>(string idToken,
+        public static async Task<TResult> ValidateToken<TResult>(string idToken,
             Func<SecurityToken, ClaimsPrincipal, TResult> onSuccess,
             Func<string, TResult> onFailed)
         {
+            if (default(TokenValidationParameters) == validationParameters)
+                await InitializeAsync(
+                    () => true, (why) => false);
             var handler = new JwtSecurityTokenHandler();
             Microsoft.IdentityModel.Tokens.SecurityToken validatedToken;
             var claims = handler.ValidateToken(idToken, validationParameters, out validatedToken);
             return onSuccess(validatedToken, claims);
+        }
+
+        public static void AddExternalControllersX<TController>(HttpConfiguration config)
+           where TController : ApiController
+        {
+            var routes = typeof(TController)
+                .GetCustomAttributes<RoutePrefixAttribute>()
+                .Select(routePrefix => routePrefix.Prefix)
+                .Distinct();
+
+            foreach (var routePrefix in routes)
+            {
+                config.Routes.MapHttpRoute(
+                    name: routePrefix,
+                    routeTemplate: routePrefix + "/{controller}/{id}",
+                    defaults: new { id = RouteParameter.Optional });
+            }
+
+            //var assemblyRecognition = new InjectableAssemblyResolver(typeof(TController).Assembly,
+            //    config.Services.GetAssembliesResolver());
+            //config.Services.Replace(typeof(System.Web.Http.Dispatcher.IAssembliesResolver), assemblyRecognition);
         }
     }
 }

@@ -4,10 +4,11 @@ using System.Threading.Tasks;
 
 namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
 {
-    public class AzureADB2CProvider
+    public class AzureADB2CProvider : BlackBarLabs.Security.CredentialProvider.IProvideCredentials
     {
-        public async Task<TResult> RedeemTokenAsync<TResult>(Uri providerId, string username, string token, 
-            Func<string, TResult> success, Func<string, TResult> invalidCredentials,
+        public async Task<TResult> RedeemTokenAsync<TResult>(Uri providerId, string username, string id_token, 
+            Func<string, TResult> success,
+            Func<string, TResult> invalidCredentials,
             Func<TResult> couldNotConnect)
         {
 
@@ -20,9 +21,15 @@ namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
             //This will return the rolling keys to validate the jwt signature
             //We will want to cache the key here and only go fetch again if the signature look up fails.  The keys rotate about every 24 hours.
 
-            return success("key");
-
-
+            return await App.ValidateToken(id_token,
+                (token, claims) =>
+                {
+                    return success(token.Id);
+                },
+                (why) =>
+                {
+                    return couldNotConnect();
+                });
         }
 
         public Task<TResult> UpdateTokenAsync<TResult>(Uri providerId, string username, string token, Func<string, TResult> success, Func<TResult> doesNotExist,
