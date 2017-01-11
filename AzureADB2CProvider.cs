@@ -1,5 +1,6 @@
 ﻿using BlackBarLabs.Security.CredentialProvider;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
@@ -7,11 +8,10 @@ namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
     public class AzureADB2CProvider : BlackBarLabs.Security.CredentialProvider.IProvideCredentials
     {
         public async Task<TResult> RedeemTokenAsync<TResult>(Uri providerId, string username, string id_token, 
-            Func<string, TResult> success,
-            Func<string, TResult> invalidCredentials,
+            Func<Guid, System.Security.Claims.Claim[], TResult> success,
+            Func<string, TResult> invalidToken,
             Func<TResult> couldNotConnect)
         {
-
             //TODO - Validate the token with AAD B2C here
             //Surely there is a library for this.  Actually, the OWIN library does this.  Look in OO API's Startup.Auth.cs.
             //If that cannot be leveraged, to get the public key:
@@ -24,11 +24,21 @@ namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
             return await App.ValidateToken(id_token,
                 (token, claims) =>
                 {
-                    return success(token.Id);
+                    var claimType = Microsoft.Azure.CloudConfigurationManager.GetSetting(
+                        "BlackBarLabs.Security.CredentialProvider.AzureADB2C.ClaimType");
+                    var authClaims = claims.Claims
+                        .Where(claim => claim.Type.CompareTo(claimType) == 0)
+                        .ToArray();
+                    if (authClaims.Length == 0)
+                        return invalidToken($"Token does not contain claim for [{claimType}] which is necessary to operate with this sytem");
+                    Guid authId;
+                    if(!Guid.TryParse(authClaims[0].Value, out authId))
+                        return invalidToken("User has invalid auth claim for this system");
+                    return success(authId, claims.Claims.ToArray());
                 },
                 (why) =>
                 {
-                    return couldNotConnect();
+                    return invalidToken(why);
                 });
         }
 

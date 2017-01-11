@@ -17,7 +17,7 @@ namespace BlackBarLabs.Security.SessionServer.Api.Controllers
         public Uri Login { get; set; }
 
         [JsonProperty(PropertyName = "signup")]
-        public string Signup { get; set; }
+        public Uri Signup { get; set; }
     }
 
     public class AccountLinksQuery
@@ -37,9 +37,9 @@ namespace BlackBarLabs.Security.SessionServer.Api.Controllers
         {
             var response_mode = q.response_mode;
             var redirect_uri = q.redirect_uri;
-            if (String.IsNullOrWhiteSpace(CredentialProvider.AzureADB2C.App.AuthEndpoint))
+            if (String.IsNullOrWhiteSpace(CredentialProvider.AzureADB2C.App.SigninEndpoint))
                 await CredentialProvider.AzureADB2C.App.InitializeAsync(() => true, (why) => false);
-            var longurl = CredentialProvider.AzureADB2C.App.AuthEndpoint; // "https://login.microsoftonline.com/humatestlogin.onmicrosoft.com/oauth2/v2.0/authorize";
+            var longurl = CredentialProvider.AzureADB2C.App.SigninEndpoint; // "https://login.microsoftonline.com/humatestlogin.onmicrosoft.com/oauth2/v2.0/authorize";
             var uriBuilder = new UriBuilder(longurl);
             var query = HttpUtility.ParseQueryString(uriBuilder.Query);
             query["client_id"] = CredentialProvider.AzureADB2C.App.Audience; // "51d61cbc-d8bd-4928-8abb-6e1bb3155526";
@@ -57,8 +57,28 @@ namespace BlackBarLabs.Security.SessionServer.Api.Controllers
             return this.Request.CreateResponse(System.Net.HttpStatusCode.OK,
                 new AccountLinks
                 {
-                    Login = redirect,
+                    Login = GetUrl(CredentialProvider.AzureADB2C.App.SigninEndpoint, redirect_uri, response_mode),
+                    Signup = GetUrl(CredentialProvider.AzureADB2C.App.SignupEndpoint, redirect_uri, response_mode),
                 }).ToActionResult();
+        }
+
+        private Uri GetUrl(string longurl, string redirect_uri, string response_mode)
+        {
+            var uriBuilder = new UriBuilder(longurl);
+            var query = HttpUtility.ParseQueryString(uriBuilder.Query);
+            query["client_id"] = CredentialProvider.AzureADB2C.App.Audience; // "51d61cbc-d8bd-4928-8abb-6e1bb3155526";
+            query["response_type"] = "id_token";
+            query["redirect_uri"] = String.IsNullOrWhiteSpace(redirect_uri) ?
+                "https://orderowl.com/login" :
+                redirect_uri;
+            query["response_mode"] = String.IsNullOrWhiteSpace(response_mode) ? "form_post" : response_mode;
+            query["scope"] = "openid";
+            query["state"] = Guid.NewGuid().ToString("N");
+            query["nonce"] = Guid.NewGuid().ToString("N");
+            // query["p"] = "B2C_1_signin1";
+            uriBuilder.Query = query.ToString();
+            var redirect = uriBuilder.Uri; // .ToString();
+            return redirect;
         }
     }
 }

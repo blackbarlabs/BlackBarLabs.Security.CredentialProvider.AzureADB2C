@@ -11,6 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 using BlackBarLabs.Extensions;
 using BlackBarLabs.Web;
 using BlackBarLabs.Api;
+using System.Configuration;
 
 namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
 {
@@ -18,15 +19,21 @@ namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
     {
         private static TokenValidationParameters validationParameters;
         internal static string Audience;
-        internal static string AuthEndpoint;
-        private static Uri ConfigurationEndpoint;
+        internal static string SigninEndpoint;
+        internal static string SignupEndpoint;
+        private static Uri SigninConfiguration;
+        private static Uri SignupConfiguration;
 
         public static TResult AzureADB2CStartAsync<TResult>(this HttpConfiguration config, string audience, Uri configurationEndpoint,
             Func<TResult> onSuccess,
             Func<string, TResult> onFailed)
         {
-            App.Audience = audience;
-            App.ConfigurationEndpoint = configurationEndpoint;
+            App.Audience = Microsoft.Azure.CloudConfigurationManager.GetSetting(
+                "BlackBarLabs.Security.CredentialProvider.AzureADB2C.Audience");
+            App.SigninConfiguration = new Uri(ConfigurationManager.AppSettings[
+                "BlackBarLabs.Security.CredentialProvider.AzureADB2C.SigninEndpoint"]);
+            App.SignupConfiguration = new Uri(ConfigurationManager.AppSettings[
+                "BlackBarLabs.Security.CredentialProvider.AzureADB2C.SignupEndpoint"]);
             //config.AddExternalControllers<SessionServer.Api.Controllers.OpenIdResponseController>();
             AddExternalControllersX<SessionServer.Api.Controllers.OpenIdResponseController>(config);
             //return InitializeAsync(audience, configurationEndpoint, onSuccess, onFailed);
@@ -37,13 +44,11 @@ namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
             Func<TResult> onSuccess,
             Func<string, TResult> onFailed)
         {
-            var audience = App.Audience;
-            var configurationEndpoint = App.ConfigurationEndpoint;
-            var request = WebRequest.CreateHttp(configurationEndpoint);
-            return await await request.GetResponseJsonAsync(
+            var request = WebRequest.CreateHttp(App.SigninConfiguration);
+            var taskss = request.GetResponseJsonAsync(
                 (ConfigurationResource config) =>
                 {
-                    AuthEndpoint = config.AuthorizationEndpoint;
+                    SigninEndpoint = config.AuthorizationEndpoint;
                     return GetValidator(config, onSuccess, onFailed);
                 },
                 (code, why) =>
@@ -54,6 +59,24 @@ namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
                 {
                     return onFailed(why).ToTask();
                 });
+
+            var requestSignup = WebRequest.CreateHttp(App.SignupConfiguration);
+            await requestSignup.GetResponseJsonAsync(
+                (ConfigurationResource config) =>
+                {
+                    SignupEndpoint = config.AuthorizationEndpoint;
+                    return true;
+                },
+                (code, why) =>
+                {
+                    return false;
+                },
+                (why) =>
+                {
+                    return false;
+                });
+
+            return await await taskss;
         }
 
         private static async Task<TResult> GetValidator<TResult>(ConfigurationResource config,
@@ -91,8 +114,14 @@ namespace BlackBarLabs.Security.CredentialProvider.AzureADB2C
                     () => true, (why) => false);
             var handler = new JwtSecurityTokenHandler();
             Microsoft.IdentityModel.Tokens.SecurityToken validatedToken;
-            var claims = handler.ValidateToken(idToken, validationParameters, out validatedToken);
-            return onSuccess(validatedToken, claims);
+            try
+            {
+                var claims = handler.ValidateToken(idToken, validationParameters, out validatedToken);
+                return onSuccess(validatedToken, claims);
+            } catch (SecurityTokenException ex)
+            {
+                return onFailed(ex.Message);
+            }
         }
 
         public static void AddExternalControllersX<TController>(HttpConfiguration config)
